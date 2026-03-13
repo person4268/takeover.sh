@@ -3,7 +3,6 @@ set -e
 
 TO=/takeover
 OLD_INIT=$(readlink /proc/1/exe)
-PORT=80
 
 cd "$TO"
 
@@ -12,32 +11,6 @@ if [ ! -e fakeinit ]; then
     exit 1
 fi
 
-./busybox echo "Please set a root password for sshd"
-
-./busybox chroot . /bin/passwd
-
-./busybox echo "Setting up target filesystem..."
-./busybox rm -f etc/mtab
-./busybox ln -s /proc/mounts etc/mtab
-./busybox mkdir -p old_root
-
-./busybox echo "Mounting pseudo-filesystems..."
-./busybox mount -t tmpfs tmp tmp
-./busybox mount -t proc proc proc
-./busybox mount -t sysfs sys sys
-if ! ./busybox mount -t devtmpfs dev dev; then
-    ./busybox mount -t tmpfs dev dev
-    ./busybox cp -a /dev/* dev/
-    ./busybox rm -rf dev/pts
-    ./busybox mkdir dev/pts
-fi
-./busybox mount --bind /dev/pts dev/pts
-
-TTY="$(./busybox tty)"
-
-./busybox echo "Checking and switching TTY..."
-
-exec <"$TO/$TTY" >"$TO/$TTY" 2>"$TO/$TTY"
 
 ./busybox echo "Type 'OK' to continue"
 ./busybox echo -n "> "
@@ -47,27 +20,23 @@ if [ "$a" != "OK" ] ; then
 fi
 
 ./busybox echo "Preparing init..."
+
+TTY="$(./busybox tty)"
+
 ./busybox cat >tmp/${OLD_INIT##*/} <<EOF
 #!${TO}/busybox sh
 
-exec <"${TO}/${TTY}" >"${TO}/${TTY}" 2>"${TO}/${TTY}"
+exec <"${TTY}" >"${TTY}" 2>"${TTY}"
 cd "${TO}"
 
 ./busybox echo "Init takeover successful"
-./busybox echo "Pivoting root..."
+./busybox echo "preparing to pivot root if you want to..."
 ./busybox mount --make-rprivate /
-./busybox pivot_root . old_root
-./busybox echo "Chrooting and running init..."
-exec ./busybox chroot . /fakeinit
+./busybox echo "running init..."
+exec /takeover/fakeinit
 EOF
 ./busybox chmod +x tmp/${OLD_INIT##*/}
 
-./busybox echo "Starting secondary sshd"
-
-./busybox chroot . /usr/bin/ssh-keygen -A
-./busybox chroot . /usr/sbin/sshd -p $PORT -o PermitRootLogin=yes
-
-./busybox echo "You should SSH into the secondary sshd now."
 ./busybox echo "Type OK to continue"
 ./busybox echo -n "> "
 read a
@@ -84,5 +53,5 @@ fi
 
 telinit u
 
-./busybox sleep 10
+./busybox sleep 5
 
